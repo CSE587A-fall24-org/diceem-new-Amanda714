@@ -1,4 +1,4 @@
-from typing import List, Union, Tuple, Optional
+from typing import List, Union, Tuple, Optional, cast 
 import logging
 import numpy as np
 from numpy.typing import NDArray
@@ -60,14 +60,17 @@ def diceEM(experiment_data: List[NDArray[np.int_]],  # pylint: disable=C0103
                       bag_of_dice.likelihood(experiment_data))
 
         # YOUR CODE HERE. SET REQUIRED VARIABLES BY CALLING e-step AND m-step.
-        # E-step: compute the expected counts given current parameters        
+        # E-step: compute the expected counts given current parameters   
+        expected_counts = e_step(experiment_data, bag_of_dice)     
   
         # M-step: update the parameters given the expected counts
+        updated_bag_of_dice = m_step(expected_counts)
       
         prev_bag_of_dice: BagOfDice = bag_of_dice
         bag_of_dice = updated_bag_of_dice
 
     return iterations, bag_of_dice
+
 
 def e_step(experiment_data: List[NDArray[np.int_]],
            bag_of_dice: BagOfDice) -> NDArray:
@@ -106,8 +109,30 @@ def e_step(experiment_data: List[NDArray[np.int_]],
     # the current draw to get the expected counts for each die type on this draw.
     # To get the total expected counts for each type, you sum the expected
     # counts for each type over all the draws.  
+    num_dice = len(bag_of_dice.dice)
 
-    # PUT YOUR CODE HERE, FOLLOWING THE DIRECTIONS ABOVE
+    priors = np.ones(num_dice) / num_dice
+    
+    for roll in experiment_data:
+        # Compute log-likelihoods to avoid numerical underflow
+        log_likelihoods = np.zeros(num_dice)
+        for die_idx, die in enumerate(bag_of_dice.dice):
+            # Only consider the faces present in the roll
+            log_likelihood = np.sum([count * np.log(die.face_probs[face]) for face, count in enumerate(roll) if count > 0])
+            log_likelihoods[die_idx] = log_likelihood
+
+        # Calculate unnormalized log posteriors (log(prior) + log(likelihood))
+        unnormalized_log_posteriors = log_likelihoods + np.log(priors)
+        
+        # Convert log posteriors to normal scale for further calculations
+        log_sum_posteriors = np.logaddexp.reduce(unnormalized_log_posteriors)  # To normalize
+        posteriors = np.exp(unnormalized_log_posteriors - log_sum_posteriors)
+
+        # Update the expected counts using the posterior probabilities
+        for die_idx in range(num_dice):
+            expected_counts[die_idx][:len(roll)] += posteriors[die_idx] * roll
+
+
 
     return expected_counts
 
@@ -135,9 +160,11 @@ def m_step(expected_counts_by_die: NDArray[np.float_]):
     updated_type_2_frequency = np.sum(expected_counts_by_die[1])
 
     # REPLACE EACH NONE BELOW WITH YOUR CODE. 
-    updated_priors = None
-    updated_type_1_face_probs = None
-    updated_type_2_face_probs = None
+    total_roll = updated_type_1_frequency + updated_type_2_frequency
+    updated_priors = [updated_type_1_frequency / total_roll, 
+                      updated_type_2_frequency / total_roll]
+    updated_type_1_face_probs = expected_counts_by_die[0] / updated_type_1_frequency
+    updated_type_2_face_probs = expected_counts_by_die[1] / updated_type_2_frequency
     
     updated_bag_of_dice = BagOfDice(updated_priors,
                                     [Die(updated_type_1_face_probs),
@@ -167,7 +194,7 @@ def generate_sample(die_type_counts: Tuple[int],
     die_types_drawn = np.random.choice(len(die_type_probs), 
                                        num_draws, 
                                        p= die_type_probs)
-    def roll(draw_type: int) -> np.ndarray[np.integer]:
+    def roll(draw_type: int) -> np.ndarray[np.int_]:
         counts = np.zeros(face_counts_tuple[draw_type], dtype=np.int_)
         literal_rolls = np.random.choice(face_counts_tuple[draw_type],
                                          rolls_per_draw,
@@ -175,7 +202,6 @@ def generate_sample(die_type_counts: Tuple[int],
         
         for face in literal_rolls:
             counts[face] += 1
-                      
         return counts
     # In python, map returns a map object which can be coerced into a tuple or
     # list, which we then coerce again into an np.array. The final result is an
