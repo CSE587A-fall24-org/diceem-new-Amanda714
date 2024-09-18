@@ -111,7 +111,7 @@ def e_step(experiment_data: List[NDArray[np.int_]],
     # counts for each type over all the draws.  
     num_dice = len(bag_of_dice.dice)
 
-    priors = np.ones(num_dice) / num_dice
+    priors = np.array(bag_of_dice.die_priors)
     
     for roll in experiment_data:
         # Compute log-likelihoods to avoid numerical underflow
